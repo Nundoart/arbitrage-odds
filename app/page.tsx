@@ -3,44 +3,32 @@
 import { useEffect, useMemo, useState } from "react";
 
 type Outcome = { name: string; price: number; bookmaker: string };
-type Opportunity = {
-  id: string;
-  sport: string;
-  commenceTime: string;
-  matchup: string;
-  outcomes: Outcome[];
-  implied: number;
-  edge: number;
-  isArbitrage: boolean;
-};
-
-type Payload = {
-  updatedAt?: string;
-  opportunities?: Opportunity[];
-  error?: string;
-};
+type Opportunity = { id: string; sport: string; commenceTime: string; matchup: string; outcomes: Outcome[]; edge: number; isArbitrage: boolean };
+type Payload = { updatedAt?: string; opportunities?: Opportunity[]; error?: string };
 
 function toAmerican(decimal: number) {
-  if (decimal >= 2) return `+${Math.round((decimal - 1) * 100)}`;
-  return `${Math.round(-100 / (decimal - 1))}`;
+  return decimal >= 2 ? `+${Math.round((decimal - 1) * 100)}` : `${Math.round(-100 / (decimal - 1))}`;
 }
-
-function formatOdds(price: number, format: "decimal" | "american") {
-  return format === "decimal" ? price.toFixed(2) : toAmerican(price);
+function displayOdds(price: number, format: "decimal" | "american") {
+  return format === "american" ? toAmerican(price) : price.toFixed(2);
+}
+function displayTime(value?: string) {
+  if (!value) return "Checking…";
+  return new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" }).format(new Date(value));
 }
 
 export default function Home() {
   const [data, setData] = useState<Payload>({});
   const [loading, setLoading] = useState(true);
-  const [format, setFormat] = useState<"decimal" | "american">("decimal");
+  const [format, setFormat] = useState<"decimal" | "american">("american");
   const [sport, setSport] = useState("All");
+  const [minimumEdge, setMinimumEdge] = useState(0.5);
 
   async function load() {
     setLoading(true);
     try {
-      const res = await fetch("/api/odds", { cache: "no-store" });
-      const json = await res.json();
-      setData(json);
+      const response = await fetch("/api/odds", { cache: "no-store" });
+      setData(await response.json());
     } catch {
       setData({ error: "Unable to load odds right now." });
     } finally {
@@ -50,151 +38,24 @@ export default function Home() {
 
   useEffect(() => {
     load();
-    const id = setInterval(load, 60_000);
-    return () => clearInterval(id);
+    const interval = window.setInterval(load, 30_000);
+    return () => window.clearInterval(interval);
   }, []);
 
-  const sports = useMemo(() => {
-    const unique = new Set((data.opportunities ?? []).map((o) => o.sport));
-    return ["All", ...Array.from(unique).sort()];
-  }, [data.opportunities]);
+  const sports = useMemo(() => ["All", ...Array.from(new Set((data.opportunities ?? []).map((item) => item.sport))).sort()], [data.opportunities]);
+  const rows = useMemo(() => (data.opportunities ?? []).filter((item) => item.isArbitrage && (sport === "All" || item.sport === sport) && item.edge >= minimumEdge), [data.opportunities, sport, minimumEdge]);
 
-  const allRows = useMemo(() => {
-    return (data.opportunities ?? []).filter((o) => sport === "All" || o.sport === sport);
-  }, [data.opportunities, sport]);
-
-  const rows = useMemo(() => allRows.filter((o) => o.isArbitrage), [allRows]);
-
-  const books = useMemo(() => {
-    return Array.from(
-      new Set((data.opportunities ?? []).flatMap((o) => o.outcomes.map((x) => x.bookmaker)))
-    ).slice(0, 20);
-  }, [data.opportunities]);
-
-  const bestEdge = rows.length ? Math.max(...rows.map((r) => r.edge)) : 0;
-
-  return (
-    <main className="pageShell">
-      <header className="topbar">
-        <div className="brandWrap">
-          <div className="brandMark">AO</div>
-          <div>
-            <div className="brand">ARBITRAGE ODDS</div>
-            <div className="tagline">Live sportsbook price scanner</div>
-          </div>
-        </div>
-        <div className="livePill"><span className="liveDot" /> LIVE</div>
-      </header>
-
-      <section className="heroPanel">
-        <div className="heroCopy">
-          <div className="kicker">FIND THE GAP. LOCK THE EDGE.</div>
-          <h1>Live arbitrage opportunities across major sportsbooks.</h1>
-          <p>
-            We compare moneyline prices, surface the best number on each side, and flag
-            mathematically positive arbitrage opportunities as they appear.
-          </p>
-        </div>
-        <div className="heroStats">
-          <div className="statCard"><span>Sports tracked</span><strong>{Math.max(sports.length - 1, 0)}</strong></div>
-          <div className="statCard"><span>Sportsbooks seen</span><strong>{books.length}</strong></div>
-          <div className="statCard"><span>Live arbs</span><strong>{rows.length}</strong></div>
-          <div className="statCard"><span>Best edge</span><strong>{bestEdge > 0 ? `+${bestEdge.toFixed(2)}%` : "—"}</strong></div>
-        </div>
-      </section>
-
-      <section className="controlBar">
-        <div className="filterGroup">
-          <label>SPORT</label>
-          <select value={sport} onChange={(e) => setSport(e.target.value)}>
-            {sports.map((s) => <option key={s}>{s}</option>)}
-          </select>
-        </div>
-
-        <div className="segmented" aria-label="Odds format">
-          <button className={format === "american" ? "active" : ""} onClick={() => setFormat("american")}>American</button>
-          <button className={format === "decimal" ? "active" : ""} onClick={() => setFormat("decimal")}>Decimal</button>
-        </div>
-
-        <button className="refreshButton" onClick={load} disabled={loading}>
-          {loading ? "Refreshing…" : "Refresh odds"}
-        </button>
-      </section>
-
-      <section className="bookStrip">
-        <span className="bookStripLabel">TRACKING</span>
-        <div className="bookScroller">
-          {(books.length ? books : ["DraftKings", "FanDuel", "BetMGM", "Caesars", "Fanatics", "bet365"]).map((book) => (
-            <span className="bookChip" key={book}>{book}</span>
-          ))}
-        </div>
-      </section>
-
-      <section className="sectionHeading">
-        <div>
-          <span className="sectionEyebrow">CURRENT OPPORTUNITIES</span>
-          <h2>Live moneyline arbitrage</h2>
-        </div>
-        <div className="updatedText">
-          {data.updatedAt ? `Updated ${new Date(data.updatedAt).toLocaleTimeString()}` : "Waiting for live feed"}
-        </div>
-      </section>
-
-      {data.error ? (
-        <section className="notice danger">
-          <div className="noticeIcon">!</div>
-          <div><strong>Live feed unavailable</strong><span>{data.error}</span></div>
-          <button onClick={load}>Try again</button>
-        </section>
-      ) : null}
-
-      <section className="arbGrid">
-        {rows.map((row) => (
-          <article className="arbCard" key={row.id}>
-            <div className="arbHeader">
-              <div>
-                <span className="sportBadge">{row.sport}</span>
-                <h3>{row.matchup}</h3>
-                <time>{new Date(row.commenceTime).toLocaleString()}</time>
-              </div>
-              <div className="edgeBadge"><small>ARB EDGE</small><strong>+{row.edge.toFixed(2)}%</strong></div>
-            </div>
-
-            <div className="outcomeTable">
-              <div className="tableHead"><span>Outcome</span><span>Best sportsbook</span><span>Odds</span></div>
-              {row.outcomes.map((outcome) => (
-                <div className="outcomeRow" key={outcome.name}>
-                  <strong>{outcome.name}</strong>
-                  <span className="bookName">{outcome.bookmaker}</span>
-                  <b>{formatOdds(outcome.price, format)}</b>
-                </div>
-              ))}
-            </div>
-
-            <div className="arbFooter">
-              <span>Implied total {(row.implied * 100).toFixed(2)}%</span>
-              <span>Prices refresh automatically every 60 sec</span>
-            </div>
-          </article>
-        ))}
-      </section>
-
-      {!loading && !data.error && rows.length === 0 ? (
-        <section className="emptyState">
-          <div className="emptyIcon">↻</div>
-          <h3>No live moneyline arbitrage currently meets your filters.</h3>
-          <p>That is normal. The scanner keeps checking and refreshes automatically every 60 seconds.</p>
-          <button onClick={load}>Check again</button>
-        </section>
-      ) : null}
-
-      <footer className="siteFooter">
-        <div>
-          <strong>ARBITRAGE ODDS</strong>
-          <span>Informational sportsbook comparison only.</span>
-        </div>
-        <p>Odds can move at any moment. Always verify current prices directly with the sportsbook.</p>
-      </footer>
-    </main>
-  );
+  return <main className="pageShell"><section className="appFrame">
+    <header className="topbar"><div className="brandWrap"><div className="brandMark">A</div><div><div className="brand">ARBITRAGE ODDS</div><div className="tagline">Live market gaps, clearly compared.</div></div></div><div className="liveStatus"><span className="liveDot" /> Live · checks every 30 sec</div></header>
+    <section className="heroPanel"><div><p className="kicker">LIVE OPPORTUNITY SCANNER</p><h1>Compare the market before it moves.</h1></div><div className="lastChecked">Last checked <strong>{displayTime(data.updatedAt)}</strong></div></section>
+    <section className="controlBar" aria-label="Opportunity filters">
+      <label className="filterGroup"><span>SPORT</span><select value={sport} onChange={(event) => setSport(event.target.value)}>{sports.map((item) => <option key={item} value={item}>{item === "All" ? "All sports" : item}</option>)}</select></label>
+      <label className="rangeGroup"><span>MINIMUM EDGE <b>{minimumEdge.toFixed(1)}%</b></span><input aria-label="Minimum edge" type="range" min="0" max="10" step="0.1" value={minimumEdge} onChange={(event) => setMinimumEdge(Number(event.target.value))} /></label>
+      <div className="formatGroup"><span>ODDS FORMAT</span><div className="segmented"><button className={format === "american" ? "active" : ""} onClick={() => setFormat("american")}>American</button><button className={format === "decimal" ? "active" : ""} onClick={() => setFormat("decimal")}>Decimal</button></div></div>
+    </section>
+    <section className="tableCard" aria-live="polite"><div className="tableHead"><span>MATCHUP / MARKET</span><span>STARTS</span><span>BEST SIDE A</span><span>BEST SIDE B</span><span>ARB EDGE</span></div>
+      {rows.map((row) => <article className="opportunityRow" key={row.id}><div className="matchup"><strong>{row.matchup}</strong><span>{row.sport} · Moneyline</span></div><time>{new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(row.commenceTime))}</time>{row.outcomes.slice(0, 2).map((outcome) => <div className="bestSide" key={outcome.name}><strong>{outcome.name} · {outcome.bookmaker}</strong><b>{displayOdds(outcome.price, format)}</b></div>)}<div className="edgeBadge">+{row.edge.toFixed(1)}%</div></article>)}
+      {!loading && !data.error && rows.length === 0 && <div className="emptyState">No live moneyline arbitrage currently meets your filters. The scanner keeps checking automatically.</div>}{data.error && <div className="emptyState errorState">{data.error} <button onClick={load}>Try again</button></div>}{loading && rows.length === 0 && <div className="emptyState">Scanning current sportsbook prices…</div>}
+    </section>
+  </section></main>;
 }
