@@ -23,6 +23,7 @@ export default function Home() {
   const [format, setFormat] = useState<"decimal" | "american">("american");
   const [sport, setSport] = useState("All");
   const [minimumEdge, setMinimumEdge] = useState(0.5);
+  const [viewCount, setViewCount] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
@@ -37,6 +38,10 @@ export default function Home() {
   }
 
   useEffect(() => {
+    fetch("https://faarsnowvezfwdrthjfe.supabase.co/rest/v1/rpc/increment_site_view", { method: "POST", headers: { apikey: "sb_publishable_tDb1evEClQ9bvIejK9L-DA_ThnNQRdr", "content-type": "application/json" }, body: JSON.stringify({ p_site_key: "arbitrage-odds" }) })
+      .then((response) => response.ok ? response.json() : null)
+      .then((rows) => setViewCount(rows?.[0]?.total ?? null))
+      .catch(() => undefined);
     load();
     const interval = window.setInterval(load, 30_000);
     return () => window.clearInterval(interval);
@@ -57,5 +62,6 @@ export default function Home() {
       {rows.map((row) => <article className="opportunityRow" key={row.id}><div className="matchup"><strong>{row.matchup}</strong><span>{row.sport} · Moneyline</span></div><time>{new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(row.commenceTime))}</time>{row.outcomes.slice(0, 2).map((outcome) => <div className="bestSide" key={outcome.name}><strong>{outcome.name} · {outcome.bookmaker}</strong><b>{displayOdds(outcome.price, format)}</b></div>)}<div className="edgeBadge">+{row.edge.toFixed(1)}%</div></article>)}
       {!loading && !data.error && rows.length === 0 && <div className="emptyState">No live moneyline arbitrage currently meets your filters. The scanner keeps checking automatically.</div>}{data.error && <div className="emptyState errorState">{data.error} <button onClick={load}>Try again</button></div>}{loading && rows.length === 0 && <div className="emptyState">Scanning current sportsbook prices…</div>}
     </section>
+    <footer className="siteCounter">Site views <b>{viewCount?.toLocaleString() ?? "—"}</b></footer>
   </section></main>;
 }
