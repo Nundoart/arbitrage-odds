@@ -28,7 +28,7 @@ export default function Home() {
   async function load() {
     setLoading(true);
     try {
-      const response = await fetch("/api/odds", { cache: "no-store" });
+      const response = await fetch("/api/odds");
       setData(await response.json());
     } catch {
       setData({ error: "Unable to load odds right now." });
@@ -43,7 +43,7 @@ export default function Home() {
       .then((rows) => setViewCount(rows?.[0]?.total ?? null))
       .catch(() => undefined);
     load();
-    const interval = window.setInterval(load, 30_000);
+    const interval = window.setInterval(load, 300_000);
     return () => window.clearInterval(interval);
   }, []);
 
@@ -51,7 +51,7 @@ export default function Home() {
   const rows = useMemo(() => (data.opportunities ?? []).filter((item) => item.isArbitrage && (sport === "All" || item.sport === sport) && item.edge >= minimumEdge), [data.opportunities, sport, minimumEdge]);
 
   return <main className="pageShell"><section className="appFrame">
-    <header className="topbar"><div className="brandWrap"><div className="brandMark">A</div><div><div className="brand">ARBITRAGE ODDS</div><div className="tagline">Live market gaps, clearly compared.</div></div></div><div className="liveStatus"><span className="liveDot" /> Live · checks every 30 sec</div></header>
+    <header className="topbar"><div className="brandWrap"><div className="brandMark">A</div><div><div className="brand">ARBITRAGE ODDS</div><div className="tagline">Live market gaps, clearly compared.</div></div></div><div className="liveStatus"><span className="liveDot" /> Live · checks every 5 min</div></header>
     <section className="heroPanel"><div><p className="kicker">LIVE OPPORTUNITY SCANNER</p><h1>Compare the market before it moves.</h1></div><div className="lastChecked">Last checked <strong>{displayTime(data.updatedAt)}</strong></div></section>
     <section className="controlBar" aria-label="Opportunity filters">
       <label className="filterGroup"><span>SPORT</span><select value={sport} onChange={(event) => setSport(event.target.value)}>{sports.map((item) => <option key={item} value={item}>{item === "All" ? "All sports" : item}</option>)}</select></label>
