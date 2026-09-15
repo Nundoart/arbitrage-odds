@@ -14,12 +14,19 @@ type Event = {
 };
 
 const EXCLUDED = new Set(["mybookieag", "mybookie"]);
+const REFRESH_SECONDS = 300;
+
+export const revalidate = REFRESH_SECONDS;
+
+function cleanApiKey(value?: string) {
+  return value?.trim().replace(/^["']|["']$/g, "");
+}
 
 export async function GET() {
-  const apiKey = process.env.ODDS_API_KEY;
+  const apiKey = cleanApiKey(process.env.ODDS_API_KEY ?? process.env.THE_ODDS_API_KEY);
   if (!apiKey) {
     return NextResponse.json(
-      { error: "ODDS_API_KEY is not configured on the server." },
+      { error: "Live odds feed is not configured." },
       { status: 503 }
     );
   }
@@ -32,12 +39,28 @@ export async function GET() {
     url.searchParams.set("oddsFormat", "decimal");
     url.searchParams.set("dateFormat", "iso");
 
-    const response = await fetch(url, { cache: "no-store" });
+    const response = await fetch(url, {
+      next: { revalidate: REFRESH_SECONDS },
+    });
+
     if (!response.ok) {
-      const text = await response.text();
+      const detail = await response.text();
+      const quotaReached =
+        response.status === 401 &&
+        /quota|credit|usage|out.of.usage/i.test(detail);
+
       return NextResponse.json(
-        { error: `Odds provider error (${response.status})`, detail: text.slice(0, 500) },
-        { status: 502 }
+        {
+          error: quotaReached
+            ? "Live odds allowance reached. The feed will resume when provider credits renew."
+            : response.status === 401
+              ? "The live odds connection needs a refreshed provider key."
+              : "Live odds are temporarily unavailable.",
+        },
+        {
+          status: quotaReached ? 429 : 502,
+          headers: { "Cache-Control": "no-store" },
+        }
       );
     }
 
@@ -49,16 +72,15 @@ export async function GET() {
       );
     }
 
-    const events = payload as Event[];
-
-    const opportunities = events
+    const opportunities = (payload as Event[])
       .map((event) => {
         const best = new Map<string, { price: number; bookmaker: string }>();
 
         for (const bookmaker of event.bookmakers ?? []) {
           if (EXCLUDED.has(bookmaker.key.toLowerCase())) continue;
-          const market = bookmaker.markets?.find((m) => m.key === "h2h");
+          const market = bookmaker.markets?.find((item) => item.key === "h2h");
           if (!market) continue;
+
           for (const outcome of market.outcomes ?? []) {
             if (!Number.isFinite(outcome.price) || outcome.price <= 1) continue;
             const current = best.get(outcome.name);
@@ -77,10 +99,8 @@ export async function GET() {
         }));
 
         if (outcomes.length < 2) return null;
-        const implied = outcomes.reduce((sum, o) => sum + 1 / o.price, 0);
+        const implied = outcomes.reduce((sum, outcome) => sum + 1 / outcome.price, 0);
         if (!Number.isFinite(implied) || implied <= 0) return null;
-
-        const edge = (1 / implied - 1) * 100;
 
         return {
           id: event.id,
@@ -89,17 +109,24 @@ export async function GET() {
           matchup: `${event.away_team} vs ${event.home_team}`,
           outcomes,
           implied,
-          edge,
+          edge: (1 / implied - 1) * 100,
           isArbitrage: implied < 1,
         };
       })
       .filter(Boolean)
       .sort((a: any, b: any) => b.edge - a.edge);
 
-    return NextResponse.json({
-      updatedAt: new Date().toISOString(),
-      opportunities,
-    });
+    return NextResponse.json(
+      {
+        updatedAt: new Date().toISOString(),
+        opportunities,
+      },
+      {
+        headers: {
+          "Cache-Control": `s-maxage=${REFRESH_SECONDS}, stale-while-revalidate=60`,
+        },
+      }
+    );
   } catch (error) {
     console.error("Odds API route failed", error);
     return NextResponse.json(
