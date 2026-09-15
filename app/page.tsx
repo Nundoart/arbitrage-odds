@@ -49,9 +49,10 @@ export default function Home() {
 
   const sports = useMemo(() => ["All", ...Array.from(new Set((data.opportunities ?? []).map((item) => item.sport))).sort()], [data.opportunities]);
   const rows = useMemo(() => (data.opportunities ?? []).filter((item) => item.isArbitrage && (sport === "All" || item.sport === sport) && item.edge >= minimumEdge), [data.opportunities, sport, minimumEdge]);
+  const allowancePaused = data.error?.startsWith("Live odds allowance reached") ?? false;
 
   return <main className="pageShell"><section className="appFrame">
-    <header className="topbar"><div className="brandWrap"><div className="brandMark">A</div><div><div className="brand">ARBITRAGE ODDS</div><div className="tagline">Live market gaps, clearly compared.</div></div></div><div className="liveStatus"><span className="liveDot" /> Live · checks every 5 min</div></header>
+    <header className="topbar"><div className="brandWrap"><div className="brandMark">A</div><div><div className="brand">ARBITRAGE ODDS</div><div className="tagline">Live market gaps, clearly compared.</div></div></div><div className="liveStatus"><span className="liveDot" /> {allowancePaused ? "Feed paused · reconnecting automatically" : "Live · checks every 5 min"}</div></header>
     <section className="heroPanel"><div><p className="kicker">LIVE OPPORTUNITY SCANNER</p><h1>Compare the market before it moves.</h1></div><div className="lastChecked">Last checked <strong>{displayTime(data.updatedAt)}</strong></div></section>
     <section className="controlBar" aria-label="Opportunity filters">
       <label className="filterGroup"><span>SPORT</span><select value={sport} onChange={(event) => setSport(event.target.value)}>{sports.map((item) => <option key={item} value={item}>{item === "All" ? "All sports" : item}</option>)}</select></label>
@@ -60,7 +61,7 @@ export default function Home() {
     </section>
     <section className="tableCard" aria-live="polite"><div className="tableHead"><span>MATCHUP / MARKET</span><span>STARTS</span><span>BEST SIDE A</span><span>BEST SIDE B</span><span>ARB EDGE</span></div>
       {rows.map((row) => <article className="opportunityRow" key={row.id}><div className="matchup"><strong>{row.matchup}</strong><span>{row.sport} · Moneyline</span></div><time>{new Intl.DateTimeFormat("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" }).format(new Date(row.commenceTime))}</time>{row.outcomes.slice(0, 2).map((outcome) => <div className="bestSide" key={outcome.name}><strong>{outcome.name} · {outcome.bookmaker}</strong><b>{displayOdds(outcome.price, format)}</b></div>)}<div className="edgeBadge">+{row.edge.toFixed(1)}%</div></article>)}
-      {!loading && !data.error && rows.length === 0 && <div className="emptyState">No live moneyline arbitrage currently meets your filters. The scanner keeps checking automatically.</div>}{data.error && <div className="emptyState errorState">{data.error} <button onClick={load}>Try again</button></div>}{loading && rows.length === 0 && <div className="emptyState">Scanning current sportsbook prices…</div>}
+      {!loading && !data.error && rows.length === 0 && <div className="emptyState">No live moneyline arbitrage currently meets your filters. The scanner keeps checking automatically.</div>}{data.error && <div className="emptyState errorState">{allowancePaused ? <>The live odds feed is temporarily paused. It will reconnect automatically when the provider allowance renews.</> : <>{data.error} <button onClick={load}>Try again</button></>}</div>}{loading && rows.length === 0 && <div className="emptyState">Scanning current sportsbook prices…</div>}
     </section>
     <footer className="siteCounter">Site views <b>{viewCount?.toLocaleString() ?? "—"}</b></footer>
   </section></main>;
