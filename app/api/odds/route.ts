@@ -16,7 +16,7 @@ type Event = {
 const EXCLUDED = new Set(["mybookieag", "mybookie"]);
 const REFRESH_SECONDS = 300;
 
-export const revalidate = REFRESH_SECONDS;
+export const revalidate = 300;
 
 function cleanApiKey(value?: string) {
   return value?.trim().replace(/^["']|["']$/g, "");
